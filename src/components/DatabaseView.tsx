@@ -67,20 +67,63 @@ const ParticipantRow = React.memo<ParticipantRowProps>(({
   const participantMsg = p.message || generateSingleMessage(p).message;
   const waLink = isPhoneReady ? generateWhatsAppLink(p.phone!, participantMsg, preferredPlatform) : '#';
 
+  const isOpened = p.deliveryStatus === 'opened';
+  const isSent = p.deliveryStatus === 'sent';
+  const isSkipped = p.deliveryStatus === 'skipped';
+  const isContacted = isOpened || isSent;
+
   return (
     <tr
-      className={`hover:bg-slate-50/70 transition-colors ${
-        isUnconfirmed ? 'bg-amber-50/30' : p.isDuplicate ? 'bg-slate-50/40 text-slate-500' : ''
+      className={`hover:bg-slate-50/80 transition-colors border-b border-slate-100 ${
+        isSent
+          ? 'bg-emerald-50/25 border-l-4 border-l-emerald-600'
+          : isOpened
+          ? 'bg-blue-50/25 border-l-4 border-l-blue-600'
+          : isSkipped
+          ? 'bg-slate-50/60 border-l-4 border-l-slate-400 opacity-70'
+          : isUnconfirmed
+          ? 'bg-amber-50/30 border-l-4 border-l-amber-500'
+          : p.isDuplicate
+          ? 'bg-slate-50/40 text-slate-500 border-l-4 border-l-transparent'
+          : 'border-l-4 border-l-transparent'
       }`}
     >
       {/* ID Peserta */}
       <td className="py-3 px-3 sm:px-4 text-center font-mono font-medium text-slate-700">
-        {p.participantId || `#${displayIndex}`}
+        <div className="flex items-center justify-center gap-1.5">
+          {isSent && (
+            <span title="Pesan Terkirim">
+              <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
+            </span>
+          )}
+          {isOpened && (
+            <span title="WhatsApp Sudah Dibuka">
+              <Check className="w-3.5 h-3.5 text-blue-600 stroke-[3]" />
+            </span>
+          )}
+          <span className={isContacted ? "text-slate-400" : ""}>
+            {p.participantId || `#${displayIndex}`}
+          </span>
+        </div>
       </td>
 
       {/* Nama Peserta */}
       <td className="py-3 px-3 sm:px-4">
-        <div className="font-semibold text-slate-900">{p.cleanName}</div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className={isContacted ? "line-through text-slate-400 decoration-slate-400 decoration-2 font-medium" : "font-semibold text-slate-900"}>
+            {p.cleanName}
+          </span>
+          {isSent && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+              <Check className="w-2.5 h-2.5 stroke-[3]" /> Terkirim
+            </span>
+          )}
+          {isOpened && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-300">
+              <Check className="w-2.5 h-2.5 stroke-[3]" /> WA Dibuka
+            </span>
+          )}
+        </div>
         {p.region && (
           <span className="inline-block mt-0.5 text-[11px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-600">
             {p.region}
@@ -147,10 +190,14 @@ const ParticipantRow = React.memo<ParticipantRowProps>(({
                 window.open(waLink, '_blank');
               }
             }}
-            className="font-mono text-xs text-emerald-700 hover:text-emerald-900 hover:underline inline-flex items-center gap-1.5 font-medium cursor-pointer"
-            title="Klik untuk langsung membuka WhatsApp"
+            className={`font-mono text-xs inline-flex items-center gap-1.5 font-medium cursor-pointer ${
+              isContacted
+                ? 'text-slate-500 line-through decoration-slate-400 hover:text-slate-700'
+                : 'text-emerald-700 hover:text-emerald-900 hover:underline'
+            }`}
+            title={isContacted ? "WhatsApp sudah pernah dibuka. Klik untuk buka lagi" : "Klik untuk langsung membuka WhatsApp"}
           >
-            <Phone className="w-3 h-3 text-emerald-600 flex-shrink-0" />
+            <Phone className={`w-3 h-3 flex-shrink-0 ${isContacted ? 'text-slate-400' : 'text-emerald-600'}`} />
             <span>{p.phone}</span>
           </a>
         ) : p.rawPhone ? (
@@ -203,12 +250,32 @@ const ParticipantRow = React.memo<ParticipantRowProps>(({
                   window.open(waLink, '_blank');
                 }
               }}
-              className="px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 min-h-[44px] bg-emerald-700 hover:bg-emerald-800 text-white transition-colors shadow-xs cursor-pointer select-none"
-              title={`Buka WhatsApp ke ${p.phone}`}
-              aria-label={`Buka WhatsApp untuk ${p.cleanName}`}
+              className={`px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 min-h-[44px] transition-colors shadow-xs cursor-pointer select-none ${
+                isSent
+                  ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300'
+                  : isOpened
+                  ? 'bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-300'
+                  : 'bg-emerald-700 hover:bg-emerald-800 text-white'
+              }`}
+              title={isContacted ? `WhatsApp sudah pernah dibuka. Klik untuk buka ulang ke ${p.phone}` : `Buka WhatsApp ke ${p.phone}`}
+              aria-label={`Buka WA untuk ${p.cleanName}`}
             >
-              <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
-              <span>Buka WA</span>
+              {isSent ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[2.5] flex-shrink-0" />
+                  <span>Terkirim</span>
+                </>
+              ) : isOpened ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-blue-600 stroke-[2.5] flex-shrink-0" />
+                  <span>Buka Ulang</span>
+                </>
+              ) : (
+                <>
+                  <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span>Buka WA</span>
+                </>
+              )}
             </a>
           ) : (
             <button

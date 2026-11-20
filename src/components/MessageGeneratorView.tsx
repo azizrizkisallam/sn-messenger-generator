@@ -72,6 +72,11 @@ const MessageCard = React.memo<MessageCardProps>(({
   const participantMsg = currentMessage || generateSingleMessage(p).message;
   const waLink = isPhoneReady ? generateWhatsAppLink(p.phone!, participantMsg, preferredPlatform) : '#';
 
+  const isOpened = p.deliveryStatus === 'opened';
+  const isSent = p.deliveryStatus === 'sent';
+  const isSkipped = p.deliveryStatus === 'skipped';
+  const isContacted = isOpened || isSent;
+
   const handleCopy = () => {
     onCopySingle(currentMessage, p.cleanName);
     setIsCopied(true);
@@ -96,16 +101,61 @@ const MessageCard = React.memo<MessageCardProps>(({
   };
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-xs hover:border-slate-300 transition-all flex flex-col justify-between overflow-hidden">
+    <div
+      className={`rounded-xl border transition-all flex flex-col justify-between overflow-hidden shadow-xs ${
+        isSent
+          ? 'bg-emerald-50/15 border-emerald-300 ring-1 ring-emerald-300/60'
+          : isOpened
+          ? 'bg-blue-50/15 border-blue-300 ring-1 ring-blue-300/60'
+          : isSkipped
+          ? 'bg-slate-50/60 border-slate-300 opacity-75'
+          : 'bg-white border-slate-200 hover:border-slate-300'
+      }`}
+    >
+      {/* Banner Penanda Status Jelas di Bagian Atas Kartu */}
+      {isOpened && (
+        <div className="bg-blue-100 text-blue-900 border-b border-blue-200 px-3.5 py-1.5 text-xs font-semibold flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <Check className="w-3.5 h-3.5 text-blue-700 stroke-[3]" />
+            <span>WhatsApp Sudah Dibuka</span>
+          </div>
+          <span className="text-[11px] font-medium text-blue-800 bg-blue-200/70 px-2 py-0.5 rounded-full">
+            Sedang Dihubungi
+          </span>
+        </div>
+      )}
+      {isSent && (
+        <div className="bg-emerald-100 text-emerald-900 border-b border-emerald-200 px-3.5 py-1.5 text-xs font-semibold flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <Check className="w-3.5 h-3.5 text-emerald-700 stroke-[3]" />
+            <span>Pesan Sudah Terkirim</span>
+          </div>
+          <span className="text-[11px] font-medium text-emerald-800 bg-emerald-200/70 px-2 py-0.5 rounded-full">
+            Selesai
+          </span>
+        </div>
+      )}
+
       {/* Header Kartu */}
-      <div className="p-3.5 sm:p-4 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between gap-2">
+      <div className={`p-3.5 sm:p-4 border-b border-slate-100 flex items-center justify-between gap-2 ${
+        isContacted ? 'bg-slate-50/90' : 'bg-slate-50/70'
+      }`}>
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-xs font-mono font-medium text-slate-500 bg-slate-200/70 px-1.5 py-0.5 rounded">
-            {p.participantId || `#${displayIndex}`}
+          <span className={`text-xs font-mono font-medium px-1.5 py-0.5 rounded flex items-center gap-1 ${
+            isSent
+              ? 'bg-emerald-100 text-emerald-800'
+              : isOpened
+              ? 'bg-blue-100 text-blue-800'
+              : 'bg-slate-200/70 text-slate-600'
+          }`}>
+            {isContacted && <Check className="w-3 h-3 stroke-[3]" />}
+            <span>{p.participantId || `#${displayIndex}`}</span>
           </span>
           <div className="min-w-0">
             <div className="font-semibold text-slate-900 text-sm truncate flex items-center gap-2">
-              <span>{p.cleanName}</span>
+              <span className={isContacted ? "line-through text-slate-500 decoration-slate-400 decoration-2" : ""}>
+                {p.cleanName}
+              </span>
               {p.region && (
                 <span className="text-[11px] font-normal px-1.5 py-0.2 rounded bg-slate-200 text-slate-700">
                   {p.region}
@@ -113,8 +163,10 @@ const MessageCard = React.memo<MessageCardProps>(({
               )}
             </div>
             {p.phone && (
-              <div className="text-[11px] text-slate-500 font-mono flex items-center gap-1 mt-0.5">
-                <Phone className="w-2.5 h-2.5 text-emerald-600" />
+              <div className={`text-[11px] font-mono flex items-center gap-1 mt-0.5 ${
+                isContacted ? 'text-slate-400 line-through decoration-slate-400' : 'text-slate-500'
+              }`}>
+                <Phone className={`w-2.5 h-2.5 ${isContacted ? 'text-slate-400' : 'text-emerald-600'}`} />
                 <span>{p.phone}</span>
               </div>
             )}
@@ -150,7 +202,28 @@ const MessageCard = React.memo<MessageCardProps>(({
 
       {/* WhatsApp Chat Bubble Body */}
       <div className="p-4 bg-[#f0f2f5] flex-1 flex flex-col justify-center">
-        <div className="relative max-w-[95%] sm:max-w-[90%] self-start bg-[#d9fdd3] text-slate-900 rounded-lg rounded-tl-none p-3.5 shadow-xs text-xs sm:text-sm leading-relaxed whitespace-pre-wrap font-sans border border-[#c3f0bb]">
+        {isContacted && (
+          <div className="mb-2 self-start inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-md bg-white/95 text-slate-700 border border-slate-200 shadow-2xs">
+            {isSent ? (
+              <>
+                <Check className="w-3 h-3 text-emerald-600 stroke-[3]" />
+                <span>Pesan telah terkirim</span>
+              </>
+            ) : (
+              <>
+                <Check className="w-3 h-3 text-blue-600 stroke-[3]" />
+                <span>WhatsApp telah dibuka</span>
+              </>
+            )}
+          </div>
+        )}
+        <div className={`relative max-w-[95%] sm:max-w-[90%] self-start rounded-lg rounded-tl-none p-3.5 shadow-xs text-xs sm:text-sm leading-relaxed whitespace-pre-wrap font-sans border ${
+          isSent
+            ? 'bg-[#d9fdd3] text-slate-900 border-[#b5eab0]'
+            : isOpened
+            ? 'bg-[#eaf4ff] text-slate-900 border-[#bcdbfc]'
+            : 'bg-[#d9fdd3] text-slate-900 border-[#c3f0bb]'
+        }`}>
           {isEditing ? (
             <div className="space-y-2">
               <textarea
@@ -280,12 +353,32 @@ const MessageCard = React.memo<MessageCardProps>(({
                   window.open(waLink, '_blank');
                 }
               }}
-              className="px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 min-h-[44px] bg-emerald-700 hover:bg-emerald-800 text-white transition-colors shadow-xs cursor-pointer select-none"
-              title={`Buka WhatsApp ke ${p.phone}`}
+              className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 min-h-[44px] transition-colors shadow-xs cursor-pointer select-none ${
+                isSent
+                  ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300'
+                  : isOpened
+                  ? 'bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-300'
+                  : 'bg-emerald-700 hover:bg-emerald-800 text-white'
+              }`}
+              title={isContacted ? `WhatsApp sudah pernah dibuka. Klik untuk buka ulang ke ${p.phone}` : `Buka WhatsApp ke ${p.phone}`}
               aria-label={`Buka WhatsApp untuk ${p.cleanName}`}
             >
-              <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
-              <span>Buka WhatsApp</span>
+              {isSent ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-700 stroke-[2.5] flex-shrink-0" />
+                  <span>Terkirim (Buka Lagi)</span>
+                </>
+              ) : isOpened ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-blue-700 stroke-[2.5] flex-shrink-0" />
+                  <span>Buka Ulang WA</span>
+                </>
+              ) : (
+                <>
+                  <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span>Buka WhatsApp</span>
+                </>
+              )}
             </a>
           ) : (
             <button
