@@ -2,6 +2,8 @@
 
 > Aplikasi web modern untuk membersihkan database peserta, mendeteksi sapaan & kode gender (R/N), menghasilkan pesan WhatsApp personal dengan *Natural Message Structure Engine*, dan memfasilitasi alur pengiriman manual Click to WhatsApp tanpa otomasi bot.
 
+🌐 **Live Demo**: [https://sn-messenger-generator.vercel.app](https://sn-messenger-generator.vercel.app)
+
 ---
 
 ## 🌟 Fitur Utama
