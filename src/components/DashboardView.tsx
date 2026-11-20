@@ -12,19 +12,35 @@ import {
   Phone,
   CheckCircle2,
   Clock,
-  ShieldAlert
+  ShieldAlert,
+  Database,
+  RefreshCw,
+  Activity
 } from 'lucide-react';
+import type { ActivityLog } from '../services/supabaseService';
 
 interface DashboardViewProps {
   metrics: AppMetrics;
   onNavigate: (tab: ActiveTab) => void;
   onLoadSampleData: () => void;
+  activityLogs?: ActivityLog[];
+  supabaseConnected?: boolean;
+  supabaseTableReady?: boolean;
+  onOpenSupabaseModal?: () => void;
+  onSyncToSupabase?: () => void;
+  isSyncingToSupabase?: boolean;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
   metrics,
   onNavigate,
   onLoadSampleData,
+  activityLogs = [],
+  supabaseConnected = true,
+  supabaseTableReady = false,
+  onOpenSupabaseModal,
+  onSyncToSupabase,
+  isSyncingToSupabase = false,
 }) => {
   const hasData = metrics.totalRaw > 0;
 
@@ -152,6 +168,109 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Kolaborasi Tim & Riwayat Realtime Supabase */}
+      <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+              supabaseConnected && supabaseTableReady ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+            }`}>
+              <Database className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                <span>Kolaborasi Database Tim (Supabase)</span>
+                <span className={`text-[10px] px-2 py-0.2 rounded-full font-bold ${
+                  supabaseConnected && supabaseTableReady 
+                    ? 'bg-emerald-100 text-emerald-800' 
+                    : 'bg-amber-100 text-amber-800'
+                }`}>
+                  {supabaseConnected && supabaseTableReady ? 'Realtime Aktif' : 'Setup Diperlukan'}
+                </span>
+              </h2>
+              <p className="text-xs text-slate-500">
+                Semua perubahan status pengiriman oleh tim tersinkron otomatis secara realtime.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {hasData && onSyncToSupabase && (
+              <button
+                onClick={onSyncToSupabase}
+                disabled={isSyncingToSupabase}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-700 hover:bg-emerald-800 text-white transition-colors shadow-xs flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncingToSupabase ? 'animate-spin' : ''}`} />
+                <span>{isSyncingToSupabase ? 'Menyinkronkan...' : 'Sinkronkan Data'}</span>
+              </button>
+            )}
+
+            {onOpenSupabaseModal && (
+              <button
+                onClick={onOpenSupabaseModal}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
+              >
+                {supabaseTableReady ? 'Info Database' : 'Instruksi SQL'}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Live Activity Feed */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-xs font-medium text-slate-600">
+            <span className="flex items-center gap-1.5">
+              <Activity className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Riwayat Pemantauan Aktivitas Terkini</span>
+            </span>
+            <span className="text-[11px] text-slate-400">
+              {activityLogs.length > 0 ? `${activityLogs.length} aktivitas tercatat` : 'Belum ada catatan'}
+            </span>
+          </div>
+
+          {activityLogs.length === 0 ? (
+            <div className="bg-slate-50 rounded-lg p-4 text-center text-xs text-slate-500">
+              Riwayat aktivitas pengiriman WhatsApp tim akan otomatis muncul di sini secara real-time saat tim mulai memproses kontak.
+            </div>
+          ) : (
+            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+              {activityLogs.slice(0, 10).map((log) => {
+                const timeStr = new Date(log.timestamp).toLocaleTimeString('id-ID', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                });
+                return (
+                  <div
+                    key={log.id}
+                    className="flex items-center justify-between p-2 rounded-lg bg-slate-50/80 hover:bg-slate-100/80 transition-colors text-xs border border-slate-100"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-mono text-[10px] text-slate-400">{timeStr}</span>
+                      <span className="font-semibold text-slate-900 truncate">
+                        {log.clean_name || 'Database'}
+                      </span>
+                      <span className="text-slate-600 truncate">{log.action}</span>
+                    </div>
+                    {log.status && (
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.2 rounded shrink-0 ${
+                        log.status === 'sent'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : log.status === 'opened'
+                          ? 'bg-blue-100 text-blue-800'
+                          : 'bg-slate-200 text-slate-700'
+                      }`}>
+                        {log.status === 'sent' ? 'Terkirim' : log.status === 'opened' ? 'WA Dibuka' : log.status}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Communication Safety & Privacy Standards */}
       <div className="bg-slate-50/80 rounded-xl border border-slate-200 p-5 space-y-3">

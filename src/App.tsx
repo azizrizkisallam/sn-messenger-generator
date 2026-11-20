@@ -39,6 +39,16 @@ import {
   clearAllStorageData,
   addOrUpdateDictionaryEntry
 } from './services/storageService';
+import { 
+  checkSupabaseConnection, 
+  fetchParticipantsFromSupabase, 
+  syncParticipantsToSupabase, 
+  updateDeliveryStatusInSupabase, 
+  fetchActivityLogsFromSupabase, 
+  subscribeToSupabaseRealtime
+} from './services/supabaseService';
+import type { ActivityLog } from './services/supabaseService';
+import { SupabaseSetupModal } from './components/SupabaseSetupModal';
 
 const SAMPLE_DATABASE = `| SN1 | Ambar Susanto | L - Bandung | R | 628156003943 |
 | SN2 | Eriga Bernadia - Bekasi | N | 6281234567890 |
@@ -63,6 +73,11 @@ export function App() {
     preferredPlatform: 'universal',
   });
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [supabaseConnected, setSupabaseConnected] = useState(true);
+  const [supabaseTableReady, setSupabaseTableReady] = useState(false);
+  const [showSupabaseModal, setShowSupabaseModal] = useState(false);
+  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
+  const [isSyncingToSupabase, setIsSyncingToSupabase] = useState(false);
 
   useEffect(() => {
     const savedP = loadSavedParticipants();
@@ -72,6 +87,42 @@ export function App() {
     if (savedP.length > 0) setParticipants(savedP);
     if (savedDict.length > 0) setCustomDictionary(savedDict);
     setOptions(savedOpt);
+
+    // Cek koneksi Supabase & ambil data realtime tim jika tabel sudah ada
+    checkSupabaseConnection().then(async (status) => {
+      setSupabaseConnected(status.connected);
+      setSupabaseTableReady(status.tableExists);
+      if (status.connected && status.tableExists) {
+        const { participants: supaList } = await fetchParticipantsFromSupabase();
+        if (supaList && supaList.length > 0) {
+          setParticipants(supaList);
+        }
+        const logs = await fetchActivityLogsFromSupabase();
+        setActivityLogs(logs);
+      }
+    });
+
+    // Berlangganan perubahan data realtime dari Supabase
+    const unsubscribe = subscribeToSupabaseRealtime(
+      (updatedP) => {
+        setParticipants((prev) => {
+          const idx = prev.findIndex((p) => p.id === updatedP.id);
+          if (idx !== -1) {
+            const next = [...prev];
+            next[idx] = updatedP;
+            return next;
+          }
+          return [updatedP, ...prev];
+        });
+      },
+      (newLog) => {
+        setActivityLogs((prev) => [newLog, ...prev.slice(0, 49)]);
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -136,6 +187,11 @@ export function App() {
 
     setParticipants(withMessages);
     addToast('success', `${withMessages.length} baris peserta berhasil diproses dengan variasi alami!`);
+
+    if (supabaseTableReady) {
+      syncParticipantsToSupabase(withMessages);
+    }
+
     setActiveTab('database');
   };
 
@@ -146,6 +202,11 @@ export function App() {
     const withDuplicates = detectDuplicates(parsed);
     const withMessages = generateAllMessages(withDuplicates);
     setParticipants(withMessages);
+
+    if (supabaseTableReady) {
+      syncParticipantsToSupabase(withMessages);
+    }
+
     addToast('info', 'Contoh data tabel Google Sheets berhasil dimuat.');
   };
 
@@ -190,9 +251,38 @@ export function App() {
 
   // 3. Status Pengiriman WhatsApp
   const handleUpdateDeliveryStatus = (id: string, newStatus: DeliveryStatus) => {
+    let participantName = '';
     setParticipants((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, deliveryStatus: newStatus } : p))
+      prev.map((p) => {
+        if (p.id === id) {
+          participantName = p.cleanName;
+          return { ...p, deliveryStatus: newStatus };
+        }
+        return p;
+      })
     );
+
+    if (supabaseTableReady) {
+      updateDeliveryStatusInSupabase(id, newStatus, participantName);
+    }
+  };
+
+  const handleSyncToSupabase = async () => {
+    if (participants.length === 0) {
+      addToast('warning', 'Tidak ada data peserta untuk disinkronkan.');
+      return;
+    }
+    setIsSyncingToSupabase(true);
+    const res = await syncParticipantsToSupabase(participants);
+    setIsSyncingToSupabase(false);
+    if (res.success) {
+      addToast('success', `${participants.length} data disinkronkan ke database tim Supabase!`);
+      const logs = await fetchActivityLogsFromSupabase();
+      setActivityLogs(logs);
+    } else {
+      addToast('warning', `Gagal sinkron: ${res.error}`);
+      setShowSupabaseModal(true);
+    }
   };
 
   const handleDeleteParticipant = (id: string) => {
@@ -358,6 +448,9 @@ export function App() {
         onTabChange={setActiveTab}
         participantCount={participants.length}
         unconfirmedCount={metrics.unconfirmedCount}
+        supabaseConnected={supabaseConnected}
+        supabaseTableReady={supabaseTableReady}
+        onOpenSupabaseModal={() => setShowSupabaseModal(true)}
       />
 
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8">
@@ -366,6 +459,12 @@ export function App() {
             metrics={metrics}
             onNavigate={setActiveTab}
             onLoadSampleData={handleLoadSample}
+            activityLogs={activityLogs}
+            supabaseConnected={supabaseConnected}
+            supabaseTableReady={supabaseTableReady}
+            onOpenSupabaseModal={() => setShowSupabaseModal(true)}
+            onSyncToSupabase={handleSyncToSupabase}
+            isSyncingToSupabase={isSyncingToSupabase}
           />
         )}
 
@@ -433,6 +532,15 @@ export function App() {
       </footer>
 
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+
+      <SupabaseSetupModal
+        isOpen={showSupabaseModal}
+        onClose={() => setShowSupabaseModal(false)}
+        onConnectionSuccess={() => {
+          setSupabaseTableReady(true);
+          addToast('success', 'Database Supabase berhasil terhubung dan siap digunakan!');
+        }}
+      />
     </div>
   );
 }

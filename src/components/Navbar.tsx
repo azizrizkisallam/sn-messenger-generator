@@ -8,6 +8,9 @@ interface NavbarProps {
   onTabChange: (tab: ActiveTab) => void;
   participantCount: number;
   unconfirmedCount: number;
+  supabaseConnected?: boolean;
+  supabaseTableReady?: boolean;
+  onOpenSupabaseModal?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -15,6 +18,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   onTabChange,
   participantCount,
   unconfirmedCount,
+  supabaseConnected = true,
+  supabaseTableReady = false,
+  onOpenSupabaseModal,
 }) => {
   const navItems: { id: ActiveTab; label: string; icon: React.ReactNode; badge?: number; badgeAlert?: boolean }[] = [
     {
@@ -64,38 +70,78 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           </div>
 
-          {/* Desktop Tab Navigation */}
-          <nav className="hidden md:flex items-center gap-1" aria-label="Navigasi Utama">
-            {navItems.map((item) => {
-              const isActive = activeTab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => onTabChange(item.id)}
-                  className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition-colors min-h-[44px] ${
-                    isActive
-                      ? 'bg-slate-900 text-white'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                  }`}
-                  aria-current={isActive ? 'page' : undefined}
-                >
-                  {item.icon}
-                  <span>{item.label}</span>
-                  {item.badge !== undefined && (
-                    <span
-                      className={`text-xs px-1.5 py-0.2 rounded-full font-semibold ${
-                        isActive
-                          ? item.badgeAlert ? 'bg-amber-400 text-slate-950' : 'bg-emerald-600 text-white'
-                          : item.badgeAlert ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-700'
-                      }`}
-                    >
-                      {item.badge}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
+          {/* Mobile Supabase Indicator */}
+          {onOpenSupabaseModal && (
+            <button
+              onClick={onOpenSupabaseModal}
+              className="md:hidden inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200"
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${
+                supabaseConnected && supabaseTableReady ? 'bg-emerald-500' : 'bg-amber-500'
+              }`} />
+              <span>{supabaseConnected && supabaseTableReady ? 'Realtime' : 'Setup DB'}</span>
+            </button>
+          )}
+
+          {/* Desktop Tab Navigation & Supabase Status */}
+          <div className="hidden md:flex items-center gap-3">
+            <nav className="flex items-center gap-1" aria-label="Navigasi Utama">
+              {navItems.map((item) => {
+                const isActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => onTabChange(item.id)}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition-colors min-h-[44px] ${
+                      isActive
+                        ? 'bg-slate-900 text-white'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    }`}
+                    aria-current={isActive ? 'page' : undefined}
+                  >
+                    {item.icon}
+                    <span>{item.label}</span>
+                    {item.badge !== undefined && (
+                      <span
+                        className={`text-xs px-1.5 py-0.2 rounded-full font-semibold ${
+                          isActive
+                            ? item.badgeAlert ? 'bg-amber-400 text-slate-950' : 'bg-emerald-600 text-white'
+                            : item.badgeAlert ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-700'
+                        }`}
+                      >
+                        {item.badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
+
+            {onOpenSupabaseModal && (
+              <button
+                onClick={onOpenSupabaseModal}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                  supabaseConnected && supabaseTableReady
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                    : supabaseConnected
+                    ? 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
+                    : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+                }`}
+                title="Status Kolaborasi Database Tim Supabase"
+              >
+                <span className={`w-2 h-2 rounded-full ${
+                  supabaseConnected && supabaseTableReady
+                    ? 'bg-emerald-500 animate-pulse'
+                    : supabaseConnected
+                    ? 'bg-amber-500'
+                    : 'bg-slate-400'
+                }`} />
+                <span>
+                  {supabaseConnected && supabaseTableReady ? 'Supabase Realtime' : 'Setup Supabase'}
+                </span>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Mobile Navigation Bar */}
