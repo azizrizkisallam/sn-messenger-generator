@@ -40,10 +40,12 @@ describe('SobatNgaji App End-to-End Integration Tests', () => {
     expect(screen.getAllByText('Laki-laki').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Perempuan').length).toBeGreaterThan(0);
 
-    // 4. Uji tombol "Buka WA"
-    const openWaBtns = screen.getAllByRole('button', { name: /Buka WhatsApp/i });
-    expect(openWaBtns.length).toBeGreaterThan(0);
-    fireEvent.click(openWaBtns[0]);
+    // 4. Uji link "Buka WA"
+    const openWaLinks = screen.getAllByRole('link', { name: /Buka WA|Buka WhatsApp/i });
+    expect(openWaLinks.length).toBeGreaterThan(0);
+    expect(openWaLinks[0]).toHaveAttribute('href', expect.stringContaining('https://wa.me/628156003943?text='));
+    expect(openWaLinks[0]).toHaveAttribute('target', '_blank');
+    fireEvent.click(openWaLinks[0]);
 
     // Verifikasi window.open dipanggil dengan tautan wa.me
     expect(window.open).toHaveBeenCalled();
@@ -71,8 +73,8 @@ describe('SobatNgaji App End-to-End Integration Tests', () => {
     // Verifikasi kartu pesan dan tombol Buka WhatsApp di Message Generator
     await waitFor(() => {
       expect(screen.getByText('Ambar Susanto')).toBeInTheDocument();
-      const cardWaBtns = screen.getAllByRole('button', { name: /Buka WhatsApp/i });
-      expect(cardWaBtns.length).toBeGreaterThan(0);
+      const cardWaLinks = screen.getAllByRole('link', { name: /Buka WhatsApp/i });
+      expect(cardWaLinks.length).toBeGreaterThan(0);
     });
 
     // 7. Pindah ke tab Pengaturan

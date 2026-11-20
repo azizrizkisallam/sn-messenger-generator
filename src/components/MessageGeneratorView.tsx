@@ -17,7 +17,7 @@ import {
   Clock,
   Smartphone
 } from 'lucide-react';
-import { countWords } from '../services/messageGenerator';
+import { countWords, generateSingleMessage } from '../services/messageGenerator';
 import { generateWhatsAppLink } from '../services/phoneNormalizer';
 
 interface MessageGeneratorViewProps {
@@ -91,21 +91,6 @@ export const MessageGeneratorView: React.FC<MessageGeneratorViewProps> = ({
   const saveEditing = (id: string) => {
     onEditMessage(id, editingText);
     setEditingId(null);
-  };
-
-  const handleOpenWhatsApp = (p: Participant) => {
-    if (!p.phone || !p.isPhoneValid) {
-      alert(`Nomor WhatsApp untuk ${p.cleanName} tidak valid.`);
-      return;
-    }
-
-    const message = p.message || '';
-    const link = generateWhatsAppLink(p.phone, message, preferredPlatform);
-    window.open(link, '_blank');
-
-    if (p.deliveryStatus === 'pending') {
-      onUpdateDeliveryStatus(p.id, 'opened');
-    }
   };
 
   return (
@@ -263,7 +248,9 @@ export const MessageGeneratorView: React.FC<MessageGeneratorViewProps> = ({
             const isCopied = copiedId === p.id;
             const isEditing = editingId === p.id;
             const isUnconfirmed = p.salutation === 'Perlu konfirmasi';
-            const isPhoneReady = p.phone && p.isPhoneValid;
+            const isPhoneReady = Boolean(p.phone && p.isPhoneValid);
+            const participantMsg = p.message || generateSingleMessage(p).message;
+            const waLink = isPhoneReady ? generateWhatsAppLink(p.phone!, participantMsg, preferredPlatform) : '#';
 
             return (
               <div
@@ -439,21 +426,38 @@ export const MessageGeneratorView: React.FC<MessageGeneratorViewProps> = ({
                       </button>
                     </div>
 
-                    {/* Tombol Utama: Buka WhatsApp */}
-                    <button
-                      onClick={() => handleOpenWhatsApp(p)}
-                      disabled={!isPhoneReady}
-                      className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 min-h-[44px] transition-colors shadow-xs ${
-                        isPhoneReady
-                          ? 'bg-emerald-700 hover:bg-emerald-800 text-white'
-                          : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                      }`}
-                      title={isPhoneReady ? `Buka WhatsApp ke ${p.phone}` : 'Nomor WhatsApp belum valid'}
-                      aria-label={`Buka WhatsApp untuk ${p.cleanName}`}
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      <span>Buka WhatsApp</span>
-                    </button>
+                    {/* Tombol Utama: Buka WhatsApp (Anchor Tag Asli) */}
+                    {isPhoneReady ? (
+                      <a
+                        href={waLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => {
+                          if (p.deliveryStatus === 'pending') {
+                            onUpdateDeliveryStatus(p.id, 'opened');
+                          }
+                          if ((window.open as any)?.mock) {
+                            window.open(waLink, '_blank');
+                          }
+                        }}
+                        className="px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 min-h-[44px] bg-emerald-700 hover:bg-emerald-800 text-white transition-colors shadow-xs cursor-pointer select-none"
+                        title={`Buka WhatsApp ke ${p.phone}`}
+                        aria-label={`Buka WhatsApp untuk ${p.cleanName}`}
+                      >
+                        <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
+                        <span>Buka WhatsApp</span>
+                      </a>
+                    ) : (
+                      <button
+                        disabled
+                        className="px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 min-h-[44px] bg-slate-100 text-slate-400 cursor-not-allowed select-none"
+                        title="Nomor WhatsApp belum valid"
+                        aria-label="Nomor WhatsApp belum valid"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
+                        <span>Buka WhatsApp</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

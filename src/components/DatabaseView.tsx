@@ -4,7 +4,7 @@ import {
   Play, 
   Trash2, 
   Search, 
-  Filter, 
+  Filter,
   FileSpreadsheet, 
   AlertTriangle, 
   ExternalLink,
@@ -13,12 +13,12 @@ import {
   Eye,
   X,
   Phone,
-  CheckCircle2,
   Clock,
   Ban,
   Smartphone
 } from 'lucide-react';
 import { generateWhatsAppLink } from '../services/phoneNormalizer';
+import { generateSingleMessage } from '../services/messageGenerator';
 
 interface DatabaseViewProps {
   participants: Participant[];
@@ -83,24 +83,6 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
 
   const unconfirmedTotal = participants.filter(p => p.salutation === 'Perlu konfirmasi').length;
   const duplicateTotal = participants.filter(p => p.isDuplicate).length;
-
-  const handleOpenWhatsApp = (p: Participant) => {
-    if (!p.phone || !p.isPhoneValid) {
-      alert(`Nomor WhatsApp untuk ${p.cleanName} tidak valid atau belum tersedia.`);
-      return;
-    }
-
-    const message = p.message || '';
-    const link = generateWhatsAppLink(p.phone, message, preferredPlatform);
-    
-    // Buka WhatsApp di tab / jendela baru
-    window.open(link, '_blank');
-
-    // Otomatis ubah status menjadi 'opened' (WhatsApp dibuka) jika masih 'pending'
-    if (p.deliveryStatus === 'pending') {
-      onUpdateDeliveryStatus(p.id, 'opened');
-    }
-  };
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto py-2">
@@ -332,7 +314,9 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                   ) : (
                     filteredParticipants.map((p, index) => {
                       const isUnconfirmed = p.salutation === 'Perlu konfirmasi';
-                      const isPhoneReady = p.phone && p.isPhoneValid;
+                      const isPhoneReady = Boolean(p.phone && p.isPhoneValid);
+                      const participantMsg = p.message || generateSingleMessage(p).message;
+                      const waLink = isPhoneReady ? generateWhatsAppLink(p.phone!, participantMsg, preferredPlatform) : '#';
 
                       return (
                         <tr
@@ -400,13 +384,27 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                             </select>
                           </td>
 
-                          {/* WhatsApp (Nomor ternormalisasi) */}
+                          {/* WhatsApp (Nomor ternormalisasi & Link Langsung) */}
                           <td className="py-3 px-3 sm:px-4">
                             {isPhoneReady ? (
-                              <div className="font-mono text-xs text-slate-900 flex items-center gap-1.5">
+                              <a
+                                href={waLink}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={() => {
+                                  if (p.deliveryStatus === 'pending') {
+                                    onUpdateDeliveryStatus(p.id, 'opened');
+                                  }
+                                  if ((window.open as any)?.mock) {
+                                    window.open(waLink, '_blank');
+                                  }
+                                }}
+                                className="font-mono text-xs text-emerald-700 hover:text-emerald-900 hover:underline inline-flex items-center gap-1.5 font-medium cursor-pointer"
+                                title="Klik untuk langsung membuka WhatsApp"
+                              >
                                 <Phone className="w-3 h-3 text-emerald-600 flex-shrink-0" />
                                 <span>{p.phone}</span>
-                              </div>
+                              </a>
                             ) : p.rawPhone ? (
                               <div className="text-xs text-red-600 font-mono flex items-center gap-1" title="Nomor tidak valid">
                                 <AlertTriangle className="w-3 h-3 flex-shrink-0" />
@@ -419,50 +417,62 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
 
                           {/* Status Pengiriman */}
                           <td className="py-3 px-3 sm:px-4">
-                            {p.deliveryStatus === 'pending' && (
-                              <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-medium border border-slate-200">
-                                <Clock className="w-3 h-3 text-slate-400" />
-                                <span>Belum dibuka</span>
-                              </span>
-                            )}
-                            {p.deliveryStatus === 'opened' && (
-                              <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-blue-50 text-blue-800 font-medium border border-blue-200">
-                                <ExternalLink className="w-3 h-3 text-blue-600" />
-                                <span>WA dibuka</span>
-                              </span>
-                            )}
-                            {p.deliveryStatus === 'sent' && (
-                              <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 font-medium border border-emerald-200">
-                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                <span>Terkirim</span>
-                              </span>
-                            )}
-                            {p.deliveryStatus === 'skipped' && (
-                              <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-amber-50 text-amber-800 font-medium border border-amber-200">
-                                <Ban className="w-3 h-3 text-amber-600" />
-                                <span>Dilewati</span>
-                              </span>
-                            )}
+                            <select
+                              value={p.deliveryStatus}
+                              onChange={(e) => onUpdateDeliveryStatus(p.id, e.target.value as DeliveryStatus)}
+                              className={`text-xs font-medium rounded-lg px-2.5 py-1.5 border min-h-[44px] transition-colors cursor-pointer ${
+                                p.deliveryStatus === 'sent'
+                                  ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                                  : p.deliveryStatus === 'opened'
+                                  ? 'bg-blue-50 border-blue-300 text-blue-800'
+                                  : p.deliveryStatus === 'skipped'
+                                  ? 'bg-amber-50 border-amber-300 text-amber-800'
+                                  : 'bg-slate-50 border-slate-200 text-slate-700'
+                              }`}
+                              aria-label={`Ubah status pengiriman untuk ${p.cleanName}`}
+                            >
+                              <option value="pending">Belum dibuka</option>
+                              <option value="opened">WA dibuka</option>
+                              <option value="sent">Terkirim</option>
+                              <option value="skipped">Dilewati</option>
+                            </select>
                           </td>
 
                           {/* Aksi Baris */}
                           <td className="py-3 px-3 sm:px-4">
                             <div className="flex items-center justify-center gap-1 flex-wrap">
-                              {/* Tombol Utama: Buka WhatsApp */}
-                              <button
-                                onClick={() => handleOpenWhatsApp(p)}
-                                disabled={!isPhoneReady}
-                                className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 min-h-[44px] transition-colors shadow-xs ${
-                                  isPhoneReady
-                                    ? 'bg-emerald-700 hover:bg-emerald-800 text-white'
-                                    : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                                }`}
-                                title={isPhoneReady ? `Buka WhatsApp ke ${p.phone}` : 'Nomor WhatsApp belum valid'}
-                                aria-label={`Buka WhatsApp untuk ${p.cleanName}`}
-                              >
-                                <ExternalLink className="w-3.5 h-3.5" />
-                                <span className="hidden sm:inline">Buka WA</span>
-                              </button>
+                              {/* Tombol Utama: Buka WhatsApp (Anchor Tag Asli) */}
+                              {isPhoneReady ? (
+                                <a
+                                  href={waLink}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={() => {
+                                    if (p.deliveryStatus === 'pending') {
+                                      onUpdateDeliveryStatus(p.id, 'opened');
+                                    }
+                                    if ((window.open as any)?.mock) {
+                                      window.open(waLink, '_blank');
+                                    }
+                                  }}
+                                  className="px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 min-h-[44px] bg-emerald-700 hover:bg-emerald-800 text-white transition-colors shadow-xs cursor-pointer select-none"
+                                  title={`Buka WhatsApp ke ${p.phone}`}
+                                  aria-label={`Buka WhatsApp untuk ${p.cleanName}`}
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
+                                  <span>Buka WA</span>
+                                </a>
+                              ) : (
+                                <button
+                                  disabled
+                                  className="px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 min-h-[44px] bg-slate-100 text-slate-400 cursor-not-allowed select-none"
+                                  title="Nomor WhatsApp belum valid"
+                                  aria-label="Nomor WhatsApp belum valid"
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
+                                  <span>Buka WA</span>
+                                </button>
+                              )}
 
                               {/* Preview Pesan */}
                               <button
@@ -591,17 +601,46 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
                   <Copy className="w-3.5 h-3.5" />
                   <span>Salin Teks</span>
                 </button>
-                <button
-                  onClick={() => {
-                    handleOpenWhatsApp(previewParticipant);
-                    setPreviewParticipant(null);
-                  }}
-                  disabled={!previewParticipant.phone || !previewParticipant.isPhoneValid}
-                  className="px-3.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white flex items-center gap-1.5 min-h-[44px]"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  <span>Buka WhatsApp</span>
-                </button>
+                {previewParticipant.phone && previewParticipant.isPhoneValid ? (
+                  <a
+                    href={generateWhatsAppLink(
+                      previewParticipant.phone,
+                      previewParticipant.message || generateSingleMessage(previewParticipant).message,
+                      preferredPlatform
+                    )}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => {
+                      if (previewParticipant.deliveryStatus === 'pending') {
+                        onUpdateDeliveryStatus(previewParticipant.id, 'opened');
+                      }
+                      if ((window.open as any)?.mock) {
+                        window.open(
+                          generateWhatsAppLink(
+                            previewParticipant.phone!,
+                            previewParticipant.message || generateSingleMessage(previewParticipant).message,
+                            preferredPlatform
+                          ),
+                          '_blank'
+                        );
+                      }
+                      setPreviewParticipant(null);
+                    }}
+                    className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-700 hover:bg-emerald-800 text-white flex items-center gap-1.5 min-h-[44px] cursor-pointer"
+                    aria-label="Buka WhatsApp"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Buka WhatsApp</span>
+                  </a>
+                ) : (
+                  <button
+                    disabled
+                    className="px-3.5 py-1.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-400 disabled:opacity-50 flex items-center gap-1.5 min-h-[44px] cursor-not-allowed"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Buka WhatsApp</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>
