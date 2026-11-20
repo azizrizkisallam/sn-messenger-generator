@@ -22,7 +22,21 @@ export function loadSavedParticipants(): Participant[] {
   }
 }
 
+let saveTimeout: any = null;
+
 export function saveParticipants(participants: Participant[]): void {
+  if (saveTimeout) clearTimeout(saveTimeout);
+  saveTimeout = setTimeout(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.PARTICIPANTS, JSON.stringify(participants));
+    } catch (e) {
+      console.error('Gagal menyimpan peserta ke localStorage:', e);
+    }
+  }, 200);
+}
+
+export function saveParticipantsImmediately(participants: Participant[]): void {
+  if (saveTimeout) clearTimeout(saveTimeout);
   try {
     localStorage.setItem(STORAGE_KEYS.PARTICIPANTS, JSON.stringify(participants));
   } catch (e) {

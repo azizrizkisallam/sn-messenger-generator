@@ -142,22 +142,38 @@ export function App() {
   };
 
   const metrics: AppMetrics = useMemo(() => {
-    const totalRaw = participants.length;
-    const totalUnique = participants.filter((p) => !p.isDuplicate).length;
-    const duplicateCount = participants.filter((p) => p.isDuplicate).length;
-    const bapakCount = participants.filter((p) => p.salutation === 'Bapak').length;
-    const ibuCount = participants.filter((p) => p.salutation === 'Ibu').length;
-    const unconfirmedCount = participants.filter((p) => p.salutation === 'Perlu konfirmasi').length;
-    const generatedCount = participants.filter((p) => !!p.message).length;
-    const validPhoneCount = participants.filter((p) => p.isPhoneValid).length;
+    let totalUnique = 0;
+    let duplicateCount = 0;
+    let bapakCount = 0;
+    let ibuCount = 0;
+    let unconfirmedCount = 0;
+    let generatedCount = 0;
+    let validPhoneCount = 0;
+    let sentCount = 0;
+    let openedCount = 0;
+    let pendingCount = 0;
+    let skippedCount = 0;
 
-    const sentCount = participants.filter((p) => p.deliveryStatus === 'sent').length;
-    const openedCount = participants.filter((p) => p.deliveryStatus === 'opened').length;
-    const pendingCount = participants.filter((p) => p.deliveryStatus === 'pending').length;
-    const skippedCount = participants.filter((p) => p.deliveryStatus === 'skipped').length;
+    for (let i = 0; i < participants.length; i++) {
+      const p = participants[i];
+      if (!p.isDuplicate) totalUnique++;
+      else duplicateCount++;
+
+      if (p.salutation === 'Bapak') bapakCount++;
+      else if (p.salutation === 'Ibu') ibuCount++;
+      else if (p.salutation === 'Perlu konfirmasi') unconfirmedCount++;
+
+      if (p.message) generatedCount++;
+      if (p.isPhoneValid) validPhoneCount++;
+
+      if (p.deliveryStatus === 'sent') sentCount++;
+      else if (p.deliveryStatus === 'opened') openedCount++;
+      else if (p.deliveryStatus === 'skipped') skippedCount++;
+      else pendingCount++;
+    }
 
     return {
-      totalRaw,
+      totalRaw: participants.length,
       totalUnique,
       duplicateCount,
       bapakCount,
