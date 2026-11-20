@@ -35,6 +35,7 @@ export interface ActivityLog {
 
 /**
  * SQL Schema untuk dibuat di Supabase SQL Editor
+ * Dibuat idempotent (aman dijalankan berulang-ulang tanpa error)
  */
 export const SUPABASE_SQL_SCHEMA = `-- 1. Buat Tabel Peserta (Participants)
 create table if not exists participants (
@@ -73,12 +74,22 @@ create table if not exists activity_logs (
 alter table participants enable row level security;
 alter table activity_logs enable row level security;
 
+drop policy if exists "Allow all on participants" on participants;
+drop policy if exists "Allow all on activity_logs" on activity_logs;
+
 create policy "Allow all on participants" on participants for all using (true) with check (true);
 create policy "Allow all on activity_logs" on activity_logs for all using (true) with check (true);
 
 -- 4. Aktifkan Supabase Realtime agar layar semua anggota tim ter-update otomatis
-alter publication supabase_realtime add table participants;
-alter publication supabase_realtime add table activity_logs;
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'participants') then
+    alter publication supabase_realtime add table participants;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'activity_logs') then
+    alter publication supabase_realtime add table activity_logs;
+  end if;
+end $$;
 `;
 
 export function participantToRow(p: Participant) {
@@ -141,7 +152,6 @@ export async function checkSupabaseConnection(): Promise<{
       .limit(1);
 
     if (error) {
-      // PGRST205 = Table does not exist
       if (error.code === 'PGRST205' || error.message.includes('not find the table')) {
         return { connected: true, tableExists: false, error: 'Tabel participants belum dibuat di Supabase.' };
       }
@@ -179,33 +189,75 @@ export async function fetchParticipantsFromSupabase(): Promise<{
 }
 
 /**
- * Menyimpan / menyinkronkan seluruh daftar peserta ke Supabase (Upsert massal)
+ * Menyimpan / menyinkronkan seluruh daftar peserta ke Supabase (Batch Upsert dalam potongan 100 baris)
  */
-export async function syncParticipantsToSupabase(participants: Participant[]): Promise<{
+export async function syncParticipantsToSupabase(
+  participants: Participant[],
+  onProgress?: (synced: number, total: number) => void
+): Promise<{
   success: boolean;
+  tableMissing?: boolean;
   error?: string;
+  syncedCount?: number;
 }> {
-  if (participants.length === 0) return { success: true };
+  if (participants.length === 0) return { success: true, syncedCount: 0 };
 
   try {
     const rows = participants.map(participantToRow);
-    const { error } = await supabase
-      .from('participants')
-      .upsert(rows, { onConflict: 'id' });
+    const CHUNK_SIZE = 100;
+    let synced = 0;
 
-    if (error) {
-      return { success: false, error: error.message };
+    for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
+      const chunk = rows.slice(i, i + CHUNK_SIZE);
+      const { error } = await supabase
+        .from('participants')
+        .upsert(chunk, { onConflict: 'id' });
+
+      if (error) {
+        const isMissing = error.code === 'PGRST205' || error.message.includes('not find the table');
+        return {
+          success: false,
+          tableMissing: isMissing,
+          error: isMissing ? 'Tabel participants belum dibuat di Supabase.' : error.message,
+        };
+      }
+
+      synced += chunk.length;
+      if (onProgress) {
+        onProgress(synced, rows.length);
+      }
     }
 
     // Catat log aktivitas impor data
     await recordActivityLog({
-      action: 'Sinkronisasi Database',
-      status: `${participants.length} data disinkronkan ke Supabase`,
+      action: 'Sinkronisasi Otomatis Database',
+      status: `${participants.length} data tersimpan ke Supabase`,
     });
 
-    return { success: true };
+    return { success: true, syncedCount: participants.length };
   } catch (err: any) {
     return { success: false, error: err?.message || 'Gagal menyimpan ke Supabase' };
+  }
+}
+
+/**
+ * Memperbarui data satu peserta di Supabase
+ */
+export async function updateParticipantInSupabase(
+  p: Participant
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const row = participantToRow(p);
+    const { error } = await supabase
+      .from('participants')
+      .upsert(row, { onConflict: 'id' });
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Gagal update Supabase' };
   }
 }
 
@@ -248,6 +300,42 @@ export async function updateDeliveryStatusInSupabase(
     return { success: true };
   } catch (err: any) {
     return { success: false, error: err?.message || 'Gagal memperbarui status di Supabase' };
+  }
+}
+
+/**
+ * Menghapus satu peserta dari Supabase
+ */
+export async function deleteParticipantFromSupabase(
+  id: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { error } = await supabase
+      .from('participants')
+      .delete()
+      .eq('id', id);
+
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message };
+  }
+}
+
+/**
+ * Mengosongkan seluruh peserta dari Supabase
+ */
+export async function clearParticipantsFromSupabase(): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { error } = await supabase
+      .from('participants')
+      .delete()
+      .neq('id', '___empty_all_participants___');
+
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message };
   }
 }
 

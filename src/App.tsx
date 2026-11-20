@@ -45,7 +45,10 @@ import {
   syncParticipantsToSupabase, 
   updateDeliveryStatusInSupabase, 
   fetchActivityLogsFromSupabase, 
-  subscribeToSupabaseRealtime
+  subscribeToSupabaseRealtime,
+  updateParticipantInSupabase,
+  deleteParticipantFromSupabase,
+  clearParticipantsFromSupabase
 } from './services/supabaseService';
 import type { ActivityLog } from './services/supabaseService';
 import { SupabaseSetupModal } from './components/SupabaseSetupModal';
@@ -96,6 +99,9 @@ export function App() {
         const { participants: supaList } = await fetchParticipantsFromSupabase();
         if (supaList && supaList.length > 0) {
           setParticipants(supaList);
+        } else if (savedP.length > 0) {
+          // Supabase tabel ada tapi kosong, upload data lokal yang ada
+          await syncParticipantsToSupabase(savedP);
         }
         const logs = await fetchActivityLogsFromSupabase();
         setActivityLogs(logs);
@@ -189,7 +195,7 @@ export function App() {
   }, [participants]);
 
   // 1. Memproses Teks Mentah Database
-  const handleProcessData = () => {
+  const handleProcessData = async () => {
     if (!rawText.trim()) return;
 
     const parsed = parseRawDatabase(rawText, customDictionary);
@@ -203,27 +209,52 @@ export function App() {
 
     setParticipants(withMessages);
     addToast('success', `${withMessages.length} baris peserta berhasil diproses dengan variasi alami!`);
-
-    if (supabaseTableReady) {
-      syncParticipantsToSupabase(withMessages);
-    }
-
     setActiveTab('database');
+
+    // Auto-save langsung ke Supabase
+    setIsSyncingToSupabase(true);
+    const res = await syncParticipantsToSupabase(withMessages);
+    setIsSyncingToSupabase(false);
+
+    if (res.success) {
+      setSupabaseTableReady(true);
+      setSupabaseConnected(true);
+      addToast('success', `☁️ ${withMessages.length} kontak berhasil tersimpan otomatis di Supabase!`);
+      const logs = await fetchActivityLogsFromSupabase();
+      setActivityLogs(logs);
+    } else if (res.tableMissing) {
+      setSupabaseTableReady(false);
+      setShowSupabaseModal(true);
+      addToast('warning', 'Data tersimpan di browser. Setup tabel Supabase agar tersimpan online.');
+    } else {
+      addToast('warning', `Gagal simpan ke Supabase: ${res.error}`);
+    }
   };
 
   // Muat data contoh Google Sheets
-  const handleLoadSample = () => {
+  const handleLoadSample = async () => {
     setRawText(SAMPLE_DATABASE);
     const parsed = parseRawDatabase(SAMPLE_DATABASE, customDictionary);
     const withDuplicates = detectDuplicates(parsed);
     const withMessages = generateAllMessages(withDuplicates);
     setParticipants(withMessages);
 
-    if (supabaseTableReady) {
-      syncParticipantsToSupabase(withMessages);
-    }
-
     addToast('info', 'Contoh data tabel Google Sheets berhasil dimuat.');
+
+    // Auto-save langsung ke Supabase
+    setIsSyncingToSupabase(true);
+    const res = await syncParticipantsToSupabase(withMessages);
+    setIsSyncingToSupabase(false);
+
+    if (res.success) {
+      setSupabaseTableReady(true);
+      setSupabaseConnected(true);
+      addToast('success', '☁️ Data contoh otomatis tersinkron ke Supabase!');
+      const logs = await fetchActivityLogsFromSupabase();
+      setActivityLogs(logs);
+    } else if (res.tableMissing) {
+      setSupabaseTableReady(false);
+    }
   };
 
   const handleClearInput = () => {
@@ -232,6 +263,8 @@ export function App() {
 
   // 2. Koreksi Sapaan Manual
   const handleUpdateSalutation = (id: string, newSalutation: Salutation) => {
+    let updatedParticipant: Participant | undefined;
+
     setParticipants((prev) =>
       prev.map((p) => {
         if (p.id !== id) return p;
@@ -250,9 +283,14 @@ export function App() {
           ctaIndex: updated.variationIndex?.cta,
         });
         updated.message = message;
+        updatedParticipant = updated;
         return updated;
       })
     );
+
+    if (supabaseTableReady && updatedParticipant) {
+      updateParticipantInSupabase(updatedParticipant);
+    }
 
     if (options.saveToDictionaryOnOverride && newSalutation !== 'Perlu konfirmasi') {
       const targetP = participants.find((p) => p.id === id);
@@ -292,6 +330,7 @@ export function App() {
     const res = await syncParticipantsToSupabase(participants);
     setIsSyncingToSupabase(false);
     if (res.success) {
+      setSupabaseTableReady(true);
       addToast('success', `${participants.length} data disinkronkan ke database tim Supabase!`);
       const logs = await fetchActivityLogsFromSupabase();
       setActivityLogs(logs);
@@ -306,6 +345,10 @@ export function App() {
     const reChecked = detectDuplicates(updated);
     setParticipants(reChecked);
     addToast('info', 'Satu baris peserta dihapus.');
+
+    if (supabaseTableReady) {
+      deleteParticipantFromSupabase(id);
+    }
   };
 
   const handleClearAll = () => {
@@ -313,6 +356,10 @@ export function App() {
     setRawText('');
     saveParticipants([]);
     addToast('info', 'Database telah dikosongkan.');
+
+    if (supabaseTableReady) {
+      clearParticipantsFromSupabase();
+    }
   };
 
   // 4. Message Generator Actions
@@ -321,30 +368,48 @@ export function App() {
     const generated = generateAllMessages(participants);
     setParticipants(generated);
     addToast('success', `Seluruh pesan (${generated.length}) berhasil digenerate dengan variasi alami!`);
+
+    if (supabaseTableReady) {
+      syncParticipantsToSupabase(generated);
+    }
   };
 
   const handleRegenerateSingle = (id: string) => {
+    let updatedItem: Participant | undefined;
     setParticipants((prev) =>
       prev.map((p) => {
         if (p.id !== id) return p;
-        return regenerateParticipantMessage(p);
+        const regen = regenerateParticipantMessage(p);
+        updatedItem = regen;
+        return regen;
       })
     );
     addToast('info', 'Variasi struktur kalimat berhasil diperbarui.');
+
+    if (supabaseTableReady && updatedItem) {
+      updateParticipantInSupabase(updatedItem);
+    }
   };
 
   const handleEditMessage = (id: string, newMessage: string) => {
+    let updatedItem: Participant | undefined;
     setParticipants((prev) =>
       prev.map((p) => {
         if (p.id !== id) return p;
-        return {
+        const edited = {
           ...p,
           message: newMessage,
           isMessageEdited: true,
         };
+        updatedItem = edited;
+        return edited;
       })
     );
     addToast('success', 'Perubahan pesan disimpan.');
+
+    if (supabaseTableReady && updatedItem) {
+      updateParticipantInSupabase(updatedItem);
+    }
   };
 
   // 5. Salin & Ekspor
@@ -504,6 +569,8 @@ export function App() {
             preferredPlatform={options.preferredPlatform}
             onPlatformChange={handlePlatformChange}
             onCopySingle={handleCopySingle}
+            supabaseTableReady={supabaseTableReady}
+            onOpenSupabaseModal={() => setShowSupabaseModal(true)}
           />
         )}
 
@@ -552,9 +619,13 @@ export function App() {
       <SupabaseSetupModal
         isOpen={showSupabaseModal}
         onClose={() => setShowSupabaseModal(false)}
-        onConnectionSuccess={() => {
+        participants={participants}
+        onConnectionSuccess={async () => {
           setSupabaseTableReady(true);
-          addToast('success', 'Database Supabase berhasil terhubung dan siap digunakan!');
+          setSupabaseConnected(true);
+          addToast('success', 'Database Supabase berhasil terhubung dan tersinkronisasi!');
+          const logs = await fetchActivityLogsFromSupabase();
+          setActivityLogs(logs);
         }}
       />
     </div>

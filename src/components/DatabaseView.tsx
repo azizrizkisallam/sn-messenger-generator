@@ -39,6 +39,8 @@ interface DatabaseViewProps {
   preferredPlatform: WhatsAppPlatform;
   onPlatformChange: (platform: WhatsAppPlatform) => void;
   onCopySingle: (text: string, name: string) => void;
+  supabaseTableReady?: boolean;
+  onOpenSupabaseModal?: () => void;
 }
 
 interface ParticipantRowProps {
@@ -369,6 +371,8 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
   preferredPlatform,
   onPlatformChange,
   onCopySingle,
+  supabaseTableReady = false,
+  onOpenSupabaseModal,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [salutationFilter, setSalutationFilter] = useState<'all' | Salutation>('all');
@@ -492,6 +496,25 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({
           )}
         </div>
       </div>
+
+      {/* Supabase Cloud Sync Warning Banner */}
+      {!supabaseTableReady && onOpenSupabaseModal && participants.length > 0 && (
+        <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs sm:text-sm text-amber-950 shadow-xs">
+          <div className="flex items-start sm:items-center gap-2.5">
+            <AlertTriangle className="w-5 h-5 text-amber-700 flex-shrink-0 mt-0.5 sm:mt-0" />
+            <div>
+              <strong className="font-semibold block sm:inline">Data Masih Disimpan Lokal: </strong>
+              Ada <strong>{participants.length} kontak</strong> di browser ini yang belum tersimpan ke database cloud Supabase. Jalankan SQL Supabase (1x saja) agar seluruh tim bisa mengakses riwayat secara realtime.
+            </div>
+          </div>
+          <button
+            onClick={onOpenSupabaseModal}
+            className="px-3.5 py-2 rounded-lg bg-amber-200 hover:bg-amber-300 text-amber-950 font-semibold text-xs transition-colors self-start sm:self-auto min-h-[44px] flex items-center gap-1.5 cursor-pointer flex-shrink-0"
+          >
+            <span>Aktifkan Supabase (15 dtk)</span>
+          </button>
+        </div>
+      )}
 
       {/* Input Textarea Section */}
       {showInputSection && (
