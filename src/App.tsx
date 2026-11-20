@@ -222,10 +222,12 @@ export function App() {
       addToast('success', `☁️ ${withMessages.length} kontak berhasil tersimpan otomatis di Supabase!`);
       const logs = await fetchActivityLogsFromSupabase();
       setActivityLogs(logs);
-    } else if (res.tableMissing) {
+    } else if (res.tableMissing || res.permissionDenied) {
       setSupabaseTableReady(false);
       setShowSupabaseModal(true);
-      addToast('warning', 'Data tersimpan di browser. Setup tabel Supabase agar tersimpan online.');
+      addToast('warning', res.permissionDenied
+        ? 'Izin akses (GRANT) belum aktif di Supabase. Buka panduan perbaikan.'
+        : 'Data tersimpan di browser. Setup tabel Supabase agar tersimpan online.');
     } else {
       addToast('warning', `Gagal simpan ke Supabase: ${res.error}`);
     }

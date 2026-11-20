@@ -34,11 +34,14 @@ export interface ActivityLog {
 }
 
 /**
- * SQL Schema untuk dibuat di Supabase SQL Editor
- * Dibuat idempotent (aman dijalankan berulang-ulang tanpa error)
+ * SQL Schema lengkap untuk dibuat di Supabase SQL Editor
+ * Sudah termasuk GRANT ALL untuk role anon & authenticated agar tidak error 42501 (permission denied)
  */
-export const SUPABASE_SQL_SCHEMA = `-- 1. Buat Tabel Peserta (Participants)
-create table if not exists participants (
+export const SUPABASE_SQL_SCHEMA = `-- 1. Berikan Izin Akses Schema Public
+grant usage on schema public to anon, authenticated, service_role;
+
+-- 2. Buat Tabel Peserta (Participants)
+create table if not exists public.participants (
   id text primary key,
   participant_id text,
   clean_name text not null,
@@ -60,8 +63,8 @@ create table if not exists participants (
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- 2. Buat Tabel Riwayat Aktivitas Tim (Activity Logs)
-create table if not exists activity_logs (
+-- 3. Buat Tabel Riwayat Aktivitas Tim (Activity Logs)
+create table if not exists public.activity_logs (
   id text primary key,
   participant_id text,
   clean_name text,
@@ -70,26 +73,48 @@ create table if not exists activity_logs (
   timestamp timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- 3. Buka Izin Akses Publik (Row Level Security) untuk Kolaborasi Tim
-alter table participants enable row level security;
-alter table activity_logs enable row level security;
+-- 4. Berikan Hak Akses Penuh (GRANT) ke Role Anon dan Authenticated
+grant all on table public.participants to anon, authenticated, service_role;
+grant all on table public.activity_logs to anon, authenticated, service_role;
 
-drop policy if exists "Allow all on participants" on participants;
-drop policy if exists "Allow all on activity_logs" on activity_logs;
+-- 5. Buka Izin Akses Publik (Row Level Security) untuk Kolaborasi Tim
+alter table public.participants enable row level security;
+alter table public.activity_logs enable row level security;
 
-create policy "Allow all on participants" on participants for all using (true) with check (true);
-create policy "Allow all on activity_logs" on activity_logs for all using (true) with check (true);
+drop policy if exists "Allow all on participants" on public.participants;
+drop policy if exists "Allow all on activity_logs" on public.activity_logs;
 
--- 4. Aktifkan Supabase Realtime agar layar semua anggota tim ter-update otomatis
+create policy "Allow all on participants" on public.participants for all to anon, authenticated, service_role using (true) with check (true);
+create policy "Allow all on activity_logs" on public.activity_logs for all to anon, authenticated, service_role using (true) with check (true);
+
+-- 6. Aktifkan Supabase Realtime agar layar semua anggota tim ter-update otomatis
 do $$
 begin
   if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'participants') then
-    alter publication supabase_realtime add table participants;
+    alter publication supabase_realtime add table public.participants;
   end if;
   if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'activity_logs') then
-    alter publication supabase_realtime add table activity_logs;
+    alter publication supabase_realtime add table public.activity_logs;
   end if;
 end $$;
+`;
+
+/**
+ * Script cepat khusus perbaikan izin (GRANT & RLS) jika tabel sudah pernah dibuat
+ */
+export const SUPABASE_FIX_PERMISSIONS_SQL = `-- Perbaikan Hak Akses (GRANT) & RLS Supabase
+grant usage on schema public to anon, authenticated, service_role;
+grant all on table public.participants to anon, authenticated, service_role;
+grant all on table public.activity_logs to anon, authenticated, service_role;
+
+alter table public.participants enable row level security;
+alter table public.activity_logs enable row level security;
+
+drop policy if exists "Allow all on participants" on public.participants;
+drop policy if exists "Allow all on activity_logs" on public.activity_logs;
+
+create policy "Allow all on participants" on public.participants for all to anon, authenticated, service_role using (true) with check (true);
+create policy "Allow all on activity_logs" on public.activity_logs for all to anon, authenticated, service_role using (true) with check (true);
 `;
 
 export function participantToRow(p: Participant) {
@@ -138,11 +163,12 @@ export function rowToParticipant(row: any): Participant {
 }
 
 /**
- * Memeriksa status koneksi ke Supabase dan ketersediaan tabel 'participants'
+ * Memeriksa status koneksi ke Supabase dan ketersediaan tabel 'participants' serta izin aksesnya
  */
 export async function checkSupabaseConnection(): Promise<{
   connected: boolean;
   tableExists: boolean;
+  permissionDenied?: boolean;
   error?: string;
 }> {
   try {
@@ -154,6 +180,14 @@ export async function checkSupabaseConnection(): Promise<{
     if (error) {
       if (error.code === 'PGRST205' || error.message.includes('not find the table')) {
         return { connected: true, tableExists: false, error: 'Tabel participants belum dibuat di Supabase.' };
+      }
+      if (error.code === '42501' || error.message.includes('permission denied')) {
+        return {
+          connected: true,
+          tableExists: true,
+          permissionDenied: true,
+          error: 'Tabel participants sudah dibuat, namun izin akses (GRANT) belum diberikan di Supabase.',
+        };
       }
       return { connected: false, tableExists: false, error: error.message };
     }
@@ -197,6 +231,7 @@ export async function syncParticipantsToSupabase(
 ): Promise<{
   success: boolean;
   tableMissing?: boolean;
+  permissionDenied?: boolean;
   error?: string;
   syncedCount?: number;
 }> {
@@ -215,10 +250,16 @@ export async function syncParticipantsToSupabase(
 
       if (error) {
         const isMissing = error.code === 'PGRST205' || error.message.includes('not find the table');
+        const isPermissionDenied = error.code === '42501' || error.message.includes('permission denied');
         return {
           success: false,
           tableMissing: isMissing,
-          error: isMissing ? 'Tabel participants belum dibuat di Supabase.' : error.message,
+          permissionDenied: isPermissionDenied,
+          error: isPermissionDenied
+            ? 'Izin akses (GRANT) belum aktif di Supabase. Jalankan SQL perbaikan izin di Supabase.'
+            : isMissing
+            ? 'Tabel participants belum dibuat di Supabase.'
+            : error.message,
         };
       }
 

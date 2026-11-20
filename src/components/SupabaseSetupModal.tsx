@@ -1,6 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Database, Copy, Check, ExternalLink, X, RefreshCw, CheckCircle2, AlertCircle, UploadCloud } from 'lucide-react';
-import { SUPABASE_SQL_SCHEMA, checkSupabaseConnection, syncParticipantsToSupabase } from '../services/supabaseService';
+import { Database, Copy, Check, ExternalLink, X, RefreshCw, CheckCircle2, AlertCircle, UploadCloud, ShieldAlert } from 'lucide-react';
+import { 
+  SUPABASE_SQL_SCHEMA, 
+  SUPABASE_FIX_PERMISSIONS_SQL, 
+  checkSupabaseConnection, 
+  syncParticipantsToSupabase 
+} from '../services/supabaseService';
 import type { Participant } from '../types';
 
 interface SupabaseSetupModalProps {
@@ -20,7 +25,7 @@ export const SupabaseSetupModal: React.FC<SupabaseSetupModalProps> = ({
   const [checking, setChecking] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState<{ synced: number; total: number } | null>(null);
-  const [checkResult, setCheckResult] = useState<{ connected: boolean; tableExists: boolean; error?: string } | null>(null);
+  const [checkResult, setCheckResult] = useState<{ connected: boolean; tableExists: boolean; permissionDenied?: boolean; error?: string } | null>(null);
 
   // Auto-poll cek status tabel setiap 3 detik saat modal terbuka
   useEffect(() => {
@@ -31,10 +36,12 @@ export const SupabaseSetupModal: React.FC<SupabaseSetupModalProps> = ({
       const res = await checkSupabaseConnection();
       if (!isMounted) return;
 
-      if (res.connected && res.tableExists) {
+      if (res.connected && res.tableExists && !res.permissionDenied) {
         clearInterval(interval);
         setCheckResult(res);
         handleAutoUpload();
+      } else if (res.permissionDenied) {
+        setCheckResult(res);
       }
     }, 3000);
 
@@ -46,14 +53,17 @@ export const SupabaseSetupModal: React.FC<SupabaseSetupModalProps> = ({
 
   if (!isOpen) return null;
 
+  const isPermissionDenied = Boolean(checkResult?.permissionDenied);
+  const activeSql = isPermissionDenied ? SUPABASE_FIX_PERMISSIONS_SQL : SUPABASE_SQL_SCHEMA;
+
   const handleCopySql = () => {
-    navigator.clipboard.writeText(SUPABASE_SQL_SCHEMA);
+    navigator.clipboard.writeText(activeSql);
     setCopied(true);
     setTimeout(() => setCopied(false), 3000);
   };
 
   const handleCopyAndOpenSupabase = () => {
-    navigator.clipboard.writeText(SUPABASE_SQL_SCHEMA);
+    navigator.clipboard.writeText(activeSql);
     setCopied(true);
     window.open('https://supabase.com/dashboard/project/sokjpskgbwhimkfnbzze/sql/new', '_blank');
     setTimeout(() => setCopied(false), 3000);
@@ -79,7 +89,12 @@ export const SupabaseSetupModal: React.FC<SupabaseSetupModalProps> = ({
       onConnectionSuccess();
       setTimeout(onClose, 1500);
     } else {
-      setCheckResult({ connected: true, tableExists: false, error: res.error });
+      setCheckResult({ 
+        connected: true, 
+        tableExists: true, 
+        permissionDenied: res.permissionDenied, 
+        error: res.error 
+      });
     }
   };
 
@@ -90,7 +105,7 @@ export const SupabaseSetupModal: React.FC<SupabaseSetupModalProps> = ({
     setChecking(false);
     setCheckResult(res);
 
-    if (res.connected && res.tableExists) {
+    if (res.connected && res.tableExists && !res.permissionDenied) {
       await handleAutoUpload();
     }
   };
@@ -101,15 +116,19 @@ export const SupabaseSetupModal: React.FC<SupabaseSetupModalProps> = ({
         {/* Header */}
         <div className="p-5 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center">
-              <Database className="w-5 h-5" />
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+              isPermissionDenied ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
+            }`}>
+              {isPermissionDenied ? <ShieldAlert className="w-5 h-5" /> : <Database className="w-5 h-5" />}
             </div>
             <div>
               <h2 className="text-base sm:text-lg font-bold text-slate-900">
-                Aktivasi Database Cloud Supabase
+                {isPermissionDenied ? 'Perbaikan Hak Akses Supabase (Error 42501)' : 'Aktivasi Database Cloud Supabase'}
               </h2>
               <p className="text-xs text-slate-500">
-                Simpan database otomatis ke Supabase agar tim bisa memantau riwayat secara real-time
+                {isPermissionDenied
+                  ? 'Tabel ditemukan, berikan izin akses (GRANT) agar data otomatis tersimpan'
+                  : 'Simpan database otomatis ke Supabase agar tim bisa memantau riwayat secara real-time'}
               </p>
             </div>
           </div>
@@ -125,28 +144,47 @@ export const SupabaseSetupModal: React.FC<SupabaseSetupModalProps> = ({
         {/* Content Body */}
         <div className="p-5 overflow-y-auto space-y-5 text-sm text-slate-700">
           {/* Status Banner */}
-          <div className="bg-emerald-50/80 border border-emerald-200 rounded-xl p-4 space-y-2">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <div className="flex items-center gap-2 font-semibold text-emerald-950 text-xs sm:text-sm">
-                <CheckCircle2 className="w-4 h-4 text-emerald-700 flex-shrink-0" />
-                <span>Koneksi Supabase Aktif: <code>sokjpskgbwhimkfnbzze</code></span>
+          {isPermissionDenied ? (
+            <div className="bg-amber-50/90 border border-amber-300 rounded-xl p-4 space-y-2">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2 font-semibold text-amber-950 text-xs sm:text-sm">
+                  <AlertCircle className="w-4 h-4 text-amber-700 flex-shrink-0" />
+                  <span>Tabel Terdeteksi! Tinggal Aktifkan Izin Akses (GRANT)</span>
+                </div>
+                {participants.length > 0 && (
+                  <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-200 text-amber-900">
+                    {participants.length} Kontak Siap Diunggah
+                  </span>
+                )}
               </div>
-              {participants.length > 0 && (
-                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-200/80 text-emerald-900">
-                  {participants.length} Kontak Siap Diunggah
-                </span>
-              )}
+              <p className="text-xs text-amber-900 leading-relaxed">
+                Tabel <code>participants</code> sudah ada di Supabase, namun PostgreSQL menolak akses publik (<code>permission denied for table participants</code>). Cukup jalankan perintah <strong>GRANT</strong> di bawah 1x saja agar web bisa langsung menyimpan data.
+              </p>
             </div>
-            <p className="text-xs text-emerald-900 leading-relaxed">
-              Supabase membutuhkan tabel <strong>participants</strong> dan <strong>activity_logs</strong> agar data otomatis tersimpan di cloud. Anda hanya perlu menjalankan kode SQL di bawah <strong>1x saja</strong> (sekitar 15 detik).
-            </p>
-          </div>
+          ) : (
+            <div className="bg-emerald-50/80 border border-emerald-200 rounded-xl p-4 space-y-2">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2 font-semibold text-emerald-950 text-xs sm:text-sm">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-700 flex-shrink-0" />
+                  <span>Koneksi Supabase Aktif: <code>sokjpskgbwhimkfnbzze</code></span>
+                </div>
+                {participants.length > 0 && (
+                  <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-200/80 text-emerald-900">
+                    {participants.length} Kontak Siap Diunggah
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-emerald-900 leading-relaxed">
+                Supabase membutuhkan tabel <strong>participants</strong> dan <strong>activity_logs</strong> agar data otomatis tersimpan di cloud. Anda hanya perlu menjalankan kode SQL di bawah <strong>1x saja</strong> (sekitar 15 detik).
+              </p>
+            </div>
+          )}
 
           {/* Action Step 1: 1-Click Copy & Open */}
           <div className="space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <span className="font-semibold text-slate-900 text-xs sm:text-sm">
-                Langkah Cepat (15 Detik):
+                {isPermissionDenied ? 'Langkah Perbaikan (10 Detik):' : 'Langkah Cepat (15 Detik):'}
               </span>
               <div className="flex items-center gap-2">
                 <button
@@ -162,22 +200,22 @@ export const SupabaseSetupModal: React.FC<SupabaseSetupModalProps> = ({
                   className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-700 hover:bg-emerald-800 text-white transition-colors shadow-xs cursor-pointer"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
-                  <span>Salin SQL &amp; Buka Supabase</span>
+                  <span>{isPermissionDenied ? 'Salin & Buka SQL Editor' : 'Salin SQL & Buka Supabase'}</span>
                 </button>
               </div>
             </div>
 
             <ol className="text-xs text-slate-600 list-decimal list-inside space-y-1 bg-slate-50 p-3 rounded-lg border border-slate-200">
-              <li>Klik tombol hijau <strong>&ldquo;Salin SQL &amp; Buka Supabase&rdquo;</strong> di atas.</li>
+              <li>Klik tombol hijau <strong>&ldquo;Salin &amp; Buka SQL Editor&rdquo;</strong> di atas.</li>
               <li>Di halaman Supabase SQL Editor yang terbuka, tekan <kbd className="px-1.5 py-0.5 rounded bg-white border border-slate-300 text-slate-800 font-mono text-[11px]">Ctrl+V</kbd> (Paste).</li>
               <li>Klik tombol hijau <strong>Run</strong> di kanan bawah Supabase.</li>
-              <li>Selesai! Aplikasi ini akan otomatis mendeteksi dan langsung mengunggah {participants.length || 'seluruh'} kontak.</li>
+              <li>Selesai! Web ini otomatis mendeteksi dan langsung mengunggah {participants.length || 'seluruh'} kontak.</li>
             </ol>
 
             {/* SQL Script Box */}
             <div className="relative">
-              <pre className="bg-slate-900 text-emerald-400 p-4 rounded-xl text-xs font-mono overflow-x-auto max-h-40 leading-relaxed border border-slate-800 select-all">
-                {SUPABASE_SQL_SCHEMA}
+              <pre className="bg-slate-900 text-emerald-400 p-4 rounded-xl text-xs font-mono overflow-x-auto max-h-44 leading-relaxed border border-slate-800 select-all">
+                {activeSql}
               </pre>
             </div>
           </div>
@@ -216,20 +254,20 @@ export const SupabaseSetupModal: React.FC<SupabaseSetupModalProps> = ({
             {/* Result Feedback */}
             {checkResult && (
               <div className={`p-3 rounded-lg border text-xs flex items-start gap-2.5 ${
-                checkResult.connected && checkResult.tableExists
+                checkResult.connected && checkResult.tableExists && !checkResult.permissionDenied
                   ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
                   : 'bg-amber-50 border-amber-300 text-amber-900'
               }`}>
-                {checkResult.connected && checkResult.tableExists ? (
+                {checkResult.connected && checkResult.tableExists && !checkResult.permissionDenied ? (
                   <CheckCircle2 className="w-4 h-4 text-emerald-700 flex-shrink-0 mt-0.5" />
                 ) : (
                   <AlertCircle className="w-4 h-4 text-amber-700 flex-shrink-0 mt-0.5" />
                 )}
                 <div>
-                  {checkResult.connected && checkResult.tableExists ? (
-                    <strong>Sukses! Tabel telah aktif di Supabase. Sinkronisasi otomatis sedang berlangsung...</strong>
+                  {checkResult.connected && checkResult.tableExists && !checkResult.permissionDenied ? (
+                    <strong>Sukses! Tabel dan izin akses telah aktif di Supabase. Data Anda sedang diunggah otomatis!</strong>
                   ) : (
-                    <span>{checkResult.error || 'Tabel belum ditemukan di Supabase. Pastikan Anda telah menekan tombol "Run" di tab Supabase SQL Editor.'}</span>
+                    <span>{checkResult.error || 'Izin akses belum aktif. Pastikan Anda telah menekan tombol "Run" di tab Supabase SQL Editor.'}</span>
                   )}
                 </div>
               </div>
@@ -240,7 +278,7 @@ export const SupabaseSetupModal: React.FC<SupabaseSetupModalProps> = ({
         {/* Footer */}
         <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
           <span className="text-[11px] text-slate-500">
-            Data Anda tetap 100% aman tersimpan di browser ini selagi setup cloud dilakukan.
+            Data Anda tetap 100% aman tersimpan di browser ini selagi izin cloud diaktifkan.
           </span>
           <button
             onClick={onClose}
